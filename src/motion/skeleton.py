@@ -55,7 +55,7 @@ UPPER_BODY = [
 AVAILABLE_MOTIONS = ["bounce", "sway"]
 
 
-def generate_pose(motion_type: str, phase: float) -> dict:
+def generate_pose(motion_type: str, phase: float, intensity: float = 1.0) -> dict:
     """
     Generate one stick-figure pose for a given motion type at a given
     phase in its loop cycle.
@@ -63,6 +63,10 @@ def generate_pose(motion_type: str, phase: float) -> dict:
     Args:
         motion_type: one of AVAILABLE_MOTIONS
         phase: position in the loop, in radians (0 to 2*pi is one full cycle)
+        intensity: scales the amplitude of the motion (0..1 typical range).
+            Lets a quiet section sway subtly and a loud section bounce big,
+            using the same motion type — this is the "how much" dimension,
+            separate from "which motion" (motion_type).
 
     Returns:
         dict mapping joint name -> [x, y]
@@ -73,20 +77,20 @@ def generate_pose(motion_type: str, phase: float) -> dict:
     pose = {j: list(BASE_POSE[j]) for j in SKELETON_JOINTS}
 
     if motion_type == "bounce":
-        bob = 0.06 * abs(np.sin(phase))
+        bob = 0.06 * intensity * abs(np.sin(phase))
         for j in UPPER_BODY:
             pose[j][1] += bob
-        arm_swing = 0.08 * np.sin(phase)
+        arm_swing = 0.08 * intensity * np.sin(phase)
         pose["l_hand"][1] += arm_swing
         pose["r_hand"][1] += arm_swing
         pose["l_elbow"][1] += arm_swing * 0.6
         pose["r_elbow"][1] += arm_swing * 0.6
-        knee_bend = 0.03 * abs(np.sin(phase))
+        knee_bend = 0.03 * intensity * abs(np.sin(phase))
         pose["l_knee"][1] -= knee_bend
         pose["r_knee"][1] -= knee_bend
 
     elif motion_type == "sway":
-        sway = 0.12 * np.sin(phase)
+        sway = 0.12 * intensity * np.sin(phase)
         for j in UPPER_BODY:
             pose[j][0] += sway
         pose["l_hand"][0] += sway * 1.3

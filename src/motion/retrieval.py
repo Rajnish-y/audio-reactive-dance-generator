@@ -59,19 +59,41 @@ def build_beat_intervals(beat_times: np.ndarray):
 
 def classify_intervals(intervals, energy_times: np.ndarray, energy: np.ndarray):
     """
-    One motion type per interval, based on that interval's *average*
-    energy — not instantaneous per-frame energy. This is what prevents
-    the motion from flickering between types multiple times within a
-    single beat: the decision is made once per beat, like a real dancer
-    picking a move and holding it.
+    Two scores per interval:
+      - motion type ("bounce"/"sway") — based on that interval's *average*
+        energy vs the song's overall mean (overall busy-ness/loudness)
+      - intensity (0.3..1.0) — based on that interval's *peak* energy,
+        normalized against the range of peaks seen across all intervals
+        in this song (not the whole clip's raw frame range, which is
+        dragged down by near-silence at the very start/end and would
+        squeeze every real beat into a narrow band).
+
+    Peak (not average) is used for intensity because it captures the
+    sharpness of the hit itself, rather than being diluted by the quieter
+    decay tail that follows it within the same beat interval.
     """
     threshold = float(np.mean(energy))
-    types = []
+
+    avg_energies, peak_energies = [], []
     for start, end in intervals:
         mask = (energy_times >= start) & (energy_times < end)
-        avg_energy = energy[mask].mean() if mask.any() else threshold
-        types.append("bounce" if avg_energy >= threshold else "sway")
-    return types, threshold
+        seg = energy[mask]
+        if len(seg):
+            avg_energies.append(seg.mean())
+            peak_energies.append(seg.max())
+        else:
+            avg_energies.append(threshold)
+            peak_energies.append(threshold)
+
+    p_min, p_max = min(peak_energies), max(peak_energies)
+
+    types, intensities = [], []
+    for avg_e, peak_e in zip(avg_energies, peak_energies):
+        types.append("bounce" if avg_e >= threshold else "sway")
+        norm = (peak_e - p_min) / (p_max - p_min) if p_max > p_min else 0.5
+        intensities.append(0.3 + 0.7 * norm)
+
+    return types, intensities, threshold
 
 
 def find_interval_index(t: float, intervals) -> int:
@@ -84,7 +106,7 @@ def find_interval_index(t: float, intervals) -> int:
 def build_motion_sequence(duration, beat_times, energy_times, energy, fps=30):
     """Returns (sequence, threshold). sequence is a list of (time, motion_type, pose)."""
     intervals = build_beat_intervals(beat_times)
-    interval_types, threshold = classify_intervals(intervals, energy_times, energy)
+    interval_types, interval_intensities, threshold = classify_intervals(intervals, energy_times, energy)
 
     n_frames = int(duration * fps)
     sequence = []
@@ -95,7 +117,8 @@ def build_motion_sequence(duration, beat_times, energy_times, energy, fps=30):
         length = (end - start) if end != float("inf") else 1.0
         phase = ((t - start) / length % 1.0) * 2 * np.pi
         motion_type = interval_types[idx]
-        sequence.append((t, motion_type, generate_pose(motion_type, phase)))
+        intensity = interval_intensities[idx]
+        sequence.append((t, motion_type, generate_pose(motion_type, phase, intensity)))
     return sequence, threshold
 
 
@@ -145,11 +168,11 @@ def main():
     sequence, threshold = build_motion_sequence(duration, beat_times, energy_times, energy, fps=fps)
 
     intervals = build_beat_intervals(beat_times)
-    interval_types, _ = classify_intervals(intervals, energy_times, energy)
+    interval_types, interval_intensities, _ = classify_intervals(intervals, energy_times, energy)
     print(f"Energy threshold: {threshold:.4f}")
-    print("Motion type per beat interval:")
-    for (start, end), motion_type in zip(intervals, interval_types):
-        print(f"  [{start:.2f}s - {end:.2f}s] -> {motion_type}")
+    print("Motion type + intensity per beat interval:")
+    for (start, end), motion_type, intensity in zip(intervals, interval_types, interval_intensities):
+        print(f"  [{start:.2f}s - {end:.2f}s] -> {motion_type:6s} (intensity {intensity:.2f})")
 
     save_sequence_gif(sequence, PROJECT_ROOT / "outputs" / "motion_sequence.gif", fps=fps)
 
