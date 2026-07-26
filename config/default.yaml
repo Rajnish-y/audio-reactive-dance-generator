@@ -1,0 +1,15 @@
+# Central config for the pipeline.
+# Every stage reads from this file instead of hardcoded values.
+
+song:
+  path: "assets/test_audio/song1.mp3"
+
+character:
+  style: "default"
+
+camera:
+  mode: "static"
+
+render:
+  fps: 30
+  resolution: [1280, 720]

@@ -1,0 +1,21 @@
+# Virtual environment — huge, and regenerated from requirements.txt anyway
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS-specific junk files
+.DS_Store
+Thumbs.db
+
+# Generated output (rendered videos/frames) — regenerable, keeps repo small
+outputs/
+
+# Large model weights/checkpoints — don't belong in git history
+*.pth
+*.ckpt
+*.onnx
+
+# Secrets, if any config ever needs an API key
+.env
