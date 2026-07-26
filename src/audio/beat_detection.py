@@ -39,18 +39,41 @@ def detect_beats(song_path: str):
     return y, sr, tempo, beat_times
 
 
-def plot_beats(y, sr, tempo, beat_times, output_path: str):
-    """Save a waveform plot with a vertical line at every detected beat."""
-    plt.figure(figsize=(14, 4))
-    librosa.display.waveshow(y, sr=sr, alpha=0.6)
+def compute_energy(y, sr, hop_length: int = 512):
+    """
+    Compute the RMS (root-mean-square) energy curve of the audio.
 
+    This is what later phases (reactive background pulsing, camera
+    intensity) will drive off — it's a measure of loudness/intensity
+    over time, not just where the beats fall.
+
+    Returns:
+        times: timestamps (seconds) matching each energy value
+        rms: energy value at each timestamp
+    """
+    rms = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+    times = librosa.frames_to_time(range(len(rms)), sr=sr, hop_length=hop_length)
+    return times, rms
+
+
+def plot_beats(y, sr, tempo, beat_times, energy_times, energy, output_path: str):
+    """Save a two-panel plot: waveform+beats on top, energy curve below."""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+
+    librosa.display.waveshow(y, sr=sr, alpha=0.6, ax=ax1)
     for t in beat_times:
-        plt.axvline(x=t, color="r", linestyle="--", alpha=0.5)
-
+        ax1.axvline(x=t, color="r", linestyle="--", alpha=0.5)
     tempo_value = float(tempo) if hasattr(tempo, "__len__") is False else float(tempo[0])
-    plt.title(f"Waveform with detected beats — estimated tempo: {tempo_value:.1f} BPM")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Amplitude")
+    ax1.set_title(f"Waveform with detected beats — estimated tempo: {tempo_value:.1f} BPM")
+    ax1.set_ylabel("Amplitude")
+
+    ax2.plot(energy_times, energy, color="darkorange")
+    for t in beat_times:
+        ax2.axvline(x=t, color="r", linestyle="--", alpha=0.3)
+    ax2.set_title("RMS energy curve")
+    ax2.set_xlabel("Time (s)")
+    ax2.set_ylabel("Energy")
+
     plt.tight_layout()
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -72,7 +95,10 @@ def main():
     print(f"Number of beats detected: {len(beat_times)}")
     print(f"First 5 beat timestamps (s): {beat_times[:5]}")
 
-    plot_beats(y, sr, tempo, beat_times, output_path="outputs/beat_plot.png")
+    energy_times, energy = compute_energy(y, sr)
+    print(f"Energy — mean: {energy.mean():.4f}, max: {energy.max():.4f}")
+
+    plot_beats(y, sr, tempo, beat_times, energy_times, energy, output_path="outputs/beat_plot.png")
 
 
 if __name__ == "__main__":
