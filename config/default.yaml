@@ -2,7 +2,7 @@
 # Every stage reads from this file instead of hardcoded values.
 
 song:
-  path: "assets/test_audio/song1.mp3"
+  path: "assets/test_audio/test_song.mp3"
 
 character:
   style: "default"
