@@ -19,3 +19,6 @@ outputs/
 
 # Secrets, if any config ever needs an API key
 .env
+# Test audio - keep folder tracked, never publish the actual files
+assets/test_audio/*
+!assets/test_audio/.gitkeep
