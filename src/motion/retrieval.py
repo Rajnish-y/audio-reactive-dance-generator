@@ -32,7 +32,7 @@ PROJECT_ROOT = SRC_DIR.parent                          # project root
 sys.path.append(str(SRC_DIR / "audio"))
 from beat_detection import detect_beats, compute_energy  # noqa: E402
 
-from skeleton import SKELETON_JOINTS, BONES, generate_pose
+from skeleton import SKELETON_JOINTS, BONES, TIER_MOTIONS, generate_pose
 
 
 def load_config() -> dict:
@@ -60,40 +60,62 @@ def build_beat_intervals(beat_times: np.ndarray):
 def classify_intervals(intervals, energy_times: np.ndarray, energy: np.ndarray):
     """
     Two scores per interval:
-      - motion type ("bounce"/"sway") — based on that interval's *average*
-        energy vs the song's overall mean (overall busy-ness/loudness)
-      - intensity (0.3..1.0) — based on that interval's *peak* energy,
-        normalized against the range of peaks seen across all intervals
-        in this song (not the whole clip's raw frame range, which is
-        dragged down by near-silence at the very start/end and would
-        squeeze every real beat into a narrow band).
-
-    Peak (not average) is used for intensity because it captures the
-    sharpness of the hit itself, rather than being diluted by the quieter
-    decay tail that follows it within the same beat interval.
+      - tier ("low"/"mid"/"high") — based on this interval's *average*
+        energy, ranked against the other intervals in this song using
+        percentile cutoffs (tertiles). Deliberately a generic tier, not
+        a motion name — which motion actually plays for a given tier is
+        decided separately (see assign_motions), so a tier with several
+        candidate motions can alternate between them.
+      - intensity (0.3..1.0) — based on *peak* energy, normalized
+        against the range of peaks across all intervals in this song
+        (peak rather than average because it captures the sharpness of
+        the hit itself, not the quieter decay tail after it).
     """
-    threshold = float(np.mean(energy))
-
     avg_energies, peak_energies = [], []
     for start, end in intervals:
         mask = (energy_times >= start) & (energy_times < end)
         seg = energy[mask]
         if len(seg):
-            avg_energies.append(seg.mean())
-            peak_energies.append(seg.max())
+            avg_energies.append(float(seg.mean()))
+            peak_energies.append(float(seg.max()))
         else:
-            avg_energies.append(threshold)
-            peak_energies.append(threshold)
+            avg_energies.append(0.0)
+            peak_energies.append(0.0)
+
+    avg_arr = np.array(avg_energies)
+    low_cut, high_cut = np.percentile(avg_arr, [33, 66])
 
     p_min, p_max = min(peak_energies), max(peak_energies)
 
-    types, intensities = [], []
+    tiers, intensities = [], []
     for avg_e, peak_e in zip(avg_energies, peak_energies):
-        types.append("bounce" if avg_e >= threshold else "sway")
+        if avg_e >= high_cut:
+            tiers.append("high")
+        elif avg_e >= low_cut:
+            tiers.append("mid")
+        else:
+            tiers.append("low")
+
         norm = (peak_e - p_min) / (p_max - p_min) if p_max > p_min else 0.5
         intensities.append(0.3 + 0.7 * norm)
 
-    return types, intensities, threshold
+    return tiers, intensities, (float(low_cut), float(high_cut))
+
+
+def assign_motions(tiers, tier_motions: dict):
+    """
+    Map each interval's energy tier to an actual motion type. When a
+    tier has more than one candidate motion, alternate through them
+    round-robin — so repeated same-tier beats (e.g. several quiet beats
+    in a row) don't all play the identical motion back to back.
+    """
+    counters = {tier: 0 for tier in tier_motions}
+    motion_types = []
+    for tier in tiers:
+        candidates = tier_motions[tier]
+        motion_types.append(candidates[counters[tier] % len(candidates)])
+        counters[tier] += 1
+    return motion_types
 
 
 def find_interval_index(t: float, intervals) -> int:
@@ -104,9 +126,10 @@ def find_interval_index(t: float, intervals) -> int:
 
 
 def build_motion_sequence(duration, beat_times, energy_times, energy, fps=30):
-    """Returns (sequence, threshold). sequence is a list of (time, motion_type, pose)."""
+    """Returns (sequence, cutoffs). sequence is a list of (time, motion_type, pose)."""
     intervals = build_beat_intervals(beat_times)
-    interval_types, interval_intensities, threshold = classify_intervals(intervals, energy_times, energy)
+    interval_tiers, interval_intensities, cutoffs = classify_intervals(intervals, energy_times, energy)
+    interval_types = assign_motions(interval_tiers, TIER_MOTIONS)
 
     n_frames = int(duration * fps)
     sequence = []
@@ -119,7 +142,7 @@ def build_motion_sequence(duration, beat_times, energy_times, energy, fps=30):
         motion_type = interval_types[idx]
         intensity = interval_intensities[idx]
         sequence.append((t, motion_type, generate_pose(motion_type, phase, intensity)))
-    return sequence, threshold
+    return sequence, cutoffs
 
 
 def draw_frame(ax, t, motion_type, pose):
@@ -165,14 +188,15 @@ def main():
 
     print(f"Duration: {duration:.2f}s | Beats: {len(beat_times)} | fps: {fps}")
 
-    sequence, threshold = build_motion_sequence(duration, beat_times, energy_times, energy, fps=fps)
+    sequence, cutoffs = build_motion_sequence(duration, beat_times, energy_times, energy, fps=fps)
 
     intervals = build_beat_intervals(beat_times)
-    interval_types, interval_intensities, _ = classify_intervals(intervals, energy_times, energy)
-    print(f"Energy threshold: {threshold:.4f}")
-    print("Motion type + intensity per beat interval:")
-    for (start, end), motion_type, intensity in zip(intervals, interval_types, interval_intensities):
-        print(f"  [{start:.2f}s - {end:.2f}s] -> {motion_type:6s} (intensity {intensity:.2f})")
+    interval_tiers, interval_intensities, (low_cut, high_cut) = classify_intervals(intervals, energy_times, energy)
+    interval_types = assign_motions(interval_tiers, TIER_MOTIONS)
+    print(f"Energy tier cutoffs — low: {low_cut:.4f}, high: {high_cut:.4f}")
+    print("Tier -> assigned motion + intensity, per beat interval:")
+    for (start, end), tier, motion_type, intensity in zip(intervals, interval_tiers, interval_types, interval_intensities):
+        print(f"  [{start:.2f}s - {end:.2f}s] tier={tier:4s} -> {motion_type:6s} (intensity {intensity:.2f})")
 
     save_sequence_gif(sequence, PROJECT_ROOT / "outputs" / "motion_sequence.gif", fps=fps)
 

@@ -1,13 +1,20 @@
 """
 Phase 3 — Dance Motion: skeleton format + placeholder motion generator.
 
-This defines a simple 2D stick-figure skeleton and two hand-built motion
+This defines a simple 2D stick-figure skeleton and hand-built motion
 loops (procedurally generated, not motion-captured). The point is to
 prove out the retrieval/rendering pipeline end-to-end with something
 simple and fast, before wiring up real motion-capture data (AIST++)
 later. The JSON pose format here is what a real dataset would eventually
 plug into — swapping the data source later shouldn't require changing
 anything downstream that consumes a pose.
+
+*** TODO / NOT PRODUCTION-READY ***
+These procedural motions (bounce/sway/wave) are a placeholder, not
+final content. They are repetitive by nature and MUST be replaced with
+real motion-capture data (AIST++) or a generative model (EDGE/Bailando)
+before this project is considered finished/deployed. Tracked in the
+project roadmap (Phase 5+) and as a GitHub issue.
 """
 
 import numpy as np
@@ -49,10 +56,18 @@ UPPER_BODY = [
     "hip_center", "l_hip", "r_hip",
 ]
 
-# The motion types this placeholder generator knows about. A real
-# retrieval system (Phase 4) would pick between many more of these,
-# selected to match the music's energy/tempo.
-AVAILABLE_MOTIONS = ["bounce", "sway"]
+# The motion types this placeholder generator knows about.
+AVAILABLE_MOTIONS = ["bounce", "sway", "wave", "step"]
+
+# Maps each energy tier to its candidate motions. A tier with more than
+# one candidate gets alternated between (round-robin) by the retrieval
+# layer, instead of always repeating the same motion for that tier —
+# a cheap way to reduce repetitiveness without new concepts per tier.
+TIER_MOTIONS = {
+    "low": ["sway", "step"],
+    "mid": ["bounce"],
+    "high": ["wave"],
+}
 
 
 def generate_pose(motion_type: str, phase: float, intensity: float = 1.0) -> dict:
@@ -97,5 +112,38 @@ def generate_pose(motion_type: str, phase: float, intensity: float = 1.0) -> dic
         pose["r_hand"][0] += sway * 1.3
         pose["l_elbow"][0] += sway * 1.15
         pose["r_elbow"][0] += sway * 1.15
+
+    elif motion_type == "wave":
+        # Arms raised and waving — reserved for the highest-energy
+        # moments. Uses abs(sin(phase)) for the lift, same as bounce,
+        # so it also returns to the exact base pose at phase 0 — keeping
+        # transitions between any two motion types pop-free at beat
+        # boundaries.
+        lift = 0.5 * intensity * abs(np.sin(phase))
+        pose["l_hand"][1] += lift
+        pose["r_hand"][1] += lift
+        pose["l_elbow"][1] += lift * 0.6
+        pose["r_elbow"][1] += lift * 0.6
+
+        wave = 0.15 * intensity * np.sin(phase * 2)
+        pose["l_hand"][0] += wave
+        pose["r_hand"][0] += wave
+        pose["l_elbow"][0] += wave * 0.6
+        pose["r_elbow"][0] += wave * 0.6
+
+    elif motion_type == "step":
+        # Lower-body weight shift with alternating foot lift — deliberately
+        # different from sway (which leans the whole upper body) so the
+        # two low-energy candidates actually look distinct from each
+        # other, not just like the same move with a different name.
+        hip_shift = 0.08 * intensity * np.sin(phase)
+        for j in ["hip_center", "l_hip", "r_hip"]:
+            pose[j][0] += hip_shift
+        pose["l_knee"][0] += hip_shift * 0.8
+        pose["r_knee"][0] += hip_shift * 0.8
+
+        lift = 0.05 * intensity
+        pose["l_foot"][1] += max(0.0, lift * np.sin(phase))
+        pose["r_foot"][1] += max(0.0, -lift * np.sin(phase))
 
     return pose
