@@ -75,7 +75,7 @@ def coco_sequence_to_poses(coco_seq: np.ndarray) -> list:
     return [coco_frame_to_pose(frame) for frame in coco_seq]
 
 
-def resample_sequence(coco_seq: np.ndarray, native_fps: float, target_fps: float) -> np.ndarray:
+def resample_sequence(coco_seq: np.ndarray, native_fps: float, target_fps: float, n_target: int = None) -> np.ndarray:
     """
     Resample a (num_frames, 17, 3) sequence from its native frame rate
     (AIST++ is 60fps) to our pipeline's target frame rate (30fps by
@@ -84,10 +84,20 @@ def resample_sequence(coco_seq: np.ndarray, native_fps: float, target_fps: float
     12 seconds, just represented with fewer (or more) frames — rather
     than naively dropping every other frame, which only works cleanly
     when the ratio is exactly 2:1 and gets wrong/jerky for anything else.
+
+    Args:
+        n_target: if given, use this exact output frame count instead of
+            deriving it from duration * target_fps. Needed by callers
+            that are assembling many consecutive snippets (like beat
+            intervals) and need to control cumulative rounding
+            themselves — independently rounding each snippet's frame
+            count causes small errors that accumulate across many
+            snippets into a noticeable total drift.
     """
     n_frames = coco_seq.shape[0]
     duration = n_frames / native_fps
-    n_target = max(1, int(round(duration * target_fps)))
+    if n_target is None:
+        n_target = max(1, int(round(duration * target_fps)))
 
     src_times = np.arange(n_frames) / native_fps
     tgt_times = np.arange(n_target) / target_fps
