@@ -22,3 +22,5 @@ outputs/
 # Test audio - keep folder tracked, never publish the actual files
 assets/test_audio/*
 !assets/test_audio/.gitkeep
+# Local research datasets (keep out of Git)
+data/

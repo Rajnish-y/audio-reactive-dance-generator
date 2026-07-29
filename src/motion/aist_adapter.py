@@ -73,3 +73,49 @@ def coco_frame_to_pose(coco_kpts: np.ndarray) -> dict:
 def coco_sequence_to_poses(coco_seq: np.ndarray) -> list:
     """Convert a full (num_frames, 17, 2+) sequence into a list of pose dicts."""
     return [coco_frame_to_pose(frame) for frame in coco_seq]
+
+
+def resample_sequence(coco_seq: np.ndarray, native_fps: float, target_fps: float) -> np.ndarray:
+    """
+    Resample a (num_frames, 17, 3) sequence from its native frame rate
+    (AIST++ is 60fps) to our pipeline's target frame rate (30fps by
+    default, from config), via linear interpolation per joint/axis over
+    time. This keeps real-time duration correct — a 12-second clip stays
+    12 seconds, just represented with fewer (or more) frames — rather
+    than naively dropping every other frame, which only works cleanly
+    when the ratio is exactly 2:1 and gets wrong/jerky for anything else.
+    """
+    n_frames = coco_seq.shape[0]
+    duration = n_frames / native_fps
+    n_target = max(1, int(round(duration * target_fps)))
+
+    src_times = np.arange(n_frames) / native_fps
+    tgt_times = np.arange(n_target) / target_fps
+
+    resampled = np.zeros((n_target, coco_seq.shape[1], coco_seq.shape[2]))
+    for j in range(coco_seq.shape[1]):
+        for k in range(coco_seq.shape[2]):
+            resampled[:, j, k] = np.interp(tgt_times, src_times, coco_seq[:, j, k])
+    return resampled
+
+
+def normalize_pose_sequence(poses: list, target_height: float = 1.6, vertical_offset: float = 0.9) -> list:
+    """
+    Auto-scale and recenter a sequence of pose dicts from AIST++'s
+    real-world units (roughly centimeters) to our renderer's expected
+    coordinate range, based on the sequence's own bounding box — so any
+    real clip fits the same visual frame our procedural motions do,
+    without hardcoding a fixed scale that would only work for one clip.
+    """
+    all_xy = np.array([[v for v in pose.values()] for pose in poses])
+    y_min, y_max = all_xy[:, :, 1].min(), all_xy[:, :, 1].max()
+    center = all_xy.reshape(-1, 2).mean(axis=0)
+    scale = target_height / (y_max - y_min) if y_max > y_min else 1.0
+
+    def norm_pose(pose):
+        return {
+            j: [(v[0] - center[0]) * scale, (v[1] - center[1]) * scale + vertical_offset]
+            for j, v in pose.items()
+        }
+
+    return [norm_pose(p) for p in poses]
