@@ -129,3 +129,103 @@ def normalize_pose_sequence(poses: list, target_height: float = 1.6, vertical_of
         }
 
     return [norm_pose(p) for p in poses]
+
+
+def lerp_pose(pose_a: dict, pose_b: dict, alpha: float) -> dict:
+    """Linearly interpolate between two poses, joint by joint. alpha=0 -> pose_a, alpha=1 -> pose_b."""
+    return {
+        j: [
+            pose_a[j][0] * (1 - alpha) + pose_b[j][0] * alpha,
+            pose_a[j][1] * (1 - alpha) + pose_b[j][1] * alpha,
+        ]
+        for j in pose_a
+    }
+
+
+def ease_into_transition(poses_a: list, poses_b: list, blend_frames: int) -> list:
+    """
+    Concatenate two pose sequences with a smoothed entry into poses_b,
+    instead of an instant cut — needed when switching between two
+    DIFFERENT real clips, which (unlike our procedural sine motions)
+    don't share a common neutral pose to cut cleanly at.
+
+    Unlike a naive crossfade that trims frames from both sides (which
+    silently shortens total duration — a real bug caught during testing:
+    it broke the exact beat-alignment duration work from the previous
+    step), this does NOT remove any frames from either sequence. It only
+    blends the VALUES of poses_b's first `blend_frames` frames — from
+    poses_a's last pose, easing toward poses_b's own trajectory — so
+    total frame count (and therefore total duration) is completely
+    unaffected by how many times a switch happens.
+    """
+    blend_frames = min(blend_frames, len(poses_b))
+    if blend_frames <= 0 or not poses_a:
+        return poses_a + poses_b
+
+    last_pose_a = poses_a[-1]
+    eased_b = list(poses_b)  # shallow copy — don't mutate the caller's list
+    for i in range(blend_frames):
+        alpha = (i + 1) / (blend_frames + 1)
+        eased_b[i] = lerp_pose(last_pose_a, poses_b[i], alpha)
+
+    return poses_a + eased_b
+
+
+def compute_pose_gap(pose_a: dict, pose_b: dict) -> float:
+    """Total joint displacement between two poses (sum of per-joint distances)."""
+    return sum(
+        ((pose_b[j][0] - pose_a[j][0]) ** 2 + (pose_b[j][1] - pose_a[j][1]) ** 2) ** 0.5
+        for j in pose_a
+    )
+
+
+def adaptive_ease_into_transition(
+    poses_a: list, poses_b: list,
+    reference_frames: int = 10, min_blend_frames: int = 3, max_blend_frames: int = 30,
+) -> list:
+    """
+    Like ease_into_transition, but chooses the blend length based on how
+    large the actual pose gap is at THIS specific switch, instead of a
+    fixed duration. Testing revealed a fixed short blend can still look
+    like a fast snap when the gap happens to be unusually large — some
+    switches measured 5-53x that clip's own normal per-frame movement,
+    because each clip's playhead can land on an arbitrary, unrelated
+    pose when a switch happens.
+
+    The target per-frame speed during the blend is estimated from
+    poses_a's own recent steady-state motion (average displacement over
+    its last `reference_frames`), so the eased-in motion moves at a
+    speed consistent with how that specific clip normally moves, rather
+    than an arbitrary global constant. min/max bounds avoid a blend
+    that's absurdly short (still a snap) or absurdly long (looks like
+    slow-motion floating) for pathological gap sizes.
+
+    This BOUNDS how bad a large gap can look — it does not eliminate the
+    root cause. A real fix would search the target clip for the frame
+    whose pose is closest to the current ending pose (nearest-pose /
+    motion-graph matching) instead of always resuming at the playhead's
+    arbitrary position. That's tracked as a separate future improvement,
+    not attempted here — see the project roadmap / GitHub issue.
+    """
+    if not poses_a:
+        return poses_b
+
+    gap = compute_pose_gap(poses_a[-1], poses_b[0])
+
+    ref = poses_a[-reference_frames - 1:] if len(poses_a) > reference_frames else poses_a
+    if len(ref) >= 2:
+        ref_speed = float(np.mean([compute_pose_gap(ref[i], ref[i + 1]) for i in range(len(ref) - 1)]))
+        ref_speed = max(ref_speed, 1e-6)
+        needed_frames = int(np.ceil(gap / ref_speed))
+    else:
+        # Not enough history to estimate a reliable reference speed (e.g.
+        # the previous segment was only 1-2 frames long). Falling back to
+        # ref_speed = gap would collapse needed_frames to the MINIMUM —
+        # the opposite of safe. Use the maximum instead: without a
+        # reliable estimate, a longer/slower blend is the conservative
+        # choice, not a faster one.
+        needed_frames = max_blend_frames
+
+    blend_frames = int(np.clip(needed_frames, min_blend_frames, max_blend_frames))
+
+    return ease_into_transition(poses_a, poses_b, blend_frames)
