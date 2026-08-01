@@ -5,10 +5,23 @@ song:
   path: "assets/test_audio/test_song.mp3"
 
 character:
-  style: "default"
+  style: "default"     # will map to a style preset later (Phase 8)
+
+motion:
+  # If true, use real AIST++ motion-capture data when the referenced
+  # clip files are actually present locally (they're gitignored, ~800MB+,
+  # not part of a fresh clone — see the setup docs). Falls back to the
+  # procedural placeholder motions (skeleton.py) automatically if the
+  # files are missing, so the project still runs out of the box for
+  # anyone who hasn't downloaded the dataset.
+  use_real_data: true
+  clips:
+    low: "data/aist_plusplus/keypoints3d/gJB_sBM_cAll_d07_mJB0_ch06.pkl"
+    mid: "data/aist_plusplus/keypoints3d/gJB_sBM_cAll_d07_mJB0_ch06.pkl"
+    high: "data/aist_plusplus/keypoints3d/gKR_sBM_cAll_d29_mKR0_ch02.pkl"
 
 camera:
-  mode: "static"
+  mode: "static"        # placeholder until Phase 7 (camera choreography)
 
 render:
   fps: 30
