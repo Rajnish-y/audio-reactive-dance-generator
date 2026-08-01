@@ -19,13 +19,24 @@ THIS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = THIS_DIR.parent.parent
 sys.path.append(str(THIS_DIR))
 
-from generate_motion import generate as generate_motion  # noqa: E402
+from generate_motion import generate as generate_motion, load_config  # noqa: E402
 from skeleton import SKELETON_JOINTS, BONES  # noqa: E402
+
+sys.path.append(str(THIS_DIR.parent / "audio"))
+from beat_detection import detect_beats  # noqa: E402
 
 
 def export_character_viewer(output_path):
     poses, fps = generate_motion()
     print(f"Generated {len(poses)} frames.")
+
+    # Re-detect beats for camera timing. Slightly redundant (motion
+    # generation already did this internally), but keeps this script
+    # simple and decoupled rather than threading beat data through every
+    # function signature upstream for one new consumer.
+    config = load_config()
+    song_path = str(PROJECT_ROOT / config["song"]["path"])
+    y, sr, tempo, beat_times = detect_beats(song_path)
 
     # Convert to a flat list-of-lists per frame (joint order fixed by
     # SKELETON_JOINTS) - more compact JSON than repeating joint names
@@ -37,6 +48,7 @@ def export_character_viewer(output_path):
         "bones": BONES,
         "fps": fps,
         "frames": frames,
+        "beat_times": [float(t) for t in beat_times],
     })
 
     html = HTML_TEMPLATE.replace("__MOTION_DATA__", motion_json)
@@ -72,7 +84,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 1.0, 4.5);
+const BASE_CAMERA_Z = 4.5;
+camera.position.set(0, 1.0, BASE_CAMERA_Z);
 camera.lookAt(0, 1.0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -126,6 +139,34 @@ function updateBone(mesh, a, b) {
 const jointIndex = {};
 MOTION.joints.forEach((name, i) => { jointIndex[name] = i; });
 
+// Camera: beat-synced "punch" zoom - dollies subtly closer right after
+// each beat, then eases back out exponentially, using the exact same
+// beat_times the audio pipeline already computed. beat_times is sorted
+// ascending (guaranteed by librosa's beat tracker), so a simple
+// backward scan for "most recent beat <= elapsed" is enough - no need
+// for a fancier search structure at this scale (a handful to a few
+// hundred beats for a full song).
+const PUNCH_STRENGTH = 0.35;   // max camera-forward distance at the instant of a beat
+const PUNCH_DECAY = 6.0;       // higher = snaps back faster
+
+function timeSinceLastBeat(elapsed) {
+  let last = null;
+  for (let i = 0; i < MOTION.beat_times.length; i++) {
+    if (MOTION.beat_times[i] <= elapsed) {
+      last = MOTION.beat_times[i];
+    } else {
+      break;
+    }
+  }
+  return last === null ? Infinity : elapsed - last;
+}
+
+function updateCamera(elapsed) {
+  const dt = timeSinceLastBeat(elapsed);
+  const punch = dt === Infinity ? 0 : PUNCH_STRENGTH * Math.exp(-PUNCH_DECAY * dt);
+  camera.position.z = BASE_CAMERA_Z - punch;
+}
+
 function applyFrame(frameIdx) {
   const frame = MOTION.frames[frameIdx];
 
@@ -150,6 +191,7 @@ function animate() {
   const elapsed = (performance.now() - startTime) / 1000;
   const frameIdx = Math.floor(elapsed * MOTION.fps) % MOTION.frames.length;
   applyFrame(frameIdx);
+  updateCamera(elapsed % (MOTION.frames.length / MOTION.fps));
   infoEl.textContent = `t=${elapsed.toFixed(2)}s  frame ${frameIdx}/${MOTION.frames.length}`;
   renderer.render(scene, camera);
 }
