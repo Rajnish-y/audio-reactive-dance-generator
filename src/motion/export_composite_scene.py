@@ -44,6 +44,17 @@ def export_composite_scene(output_path):
     config = load_config()
     song_path = PROJECT_ROOT / config["song"]["path"]
 
+    style_name = config.get("character", {}).get("style", "default")
+    style_presets = config.get("style_presets", {})
+    if style_name not in style_presets:
+        print(f"WARNING: style '{style_name}' not found in style_presets, falling back to 'default'.")
+        style_name = "default"
+    style = style_presets.get(style_name, {
+        "joint_color": "0xffa500", "bone_color": "0x4169e1",
+        "bg_phase": [0.0, 2.0, 4.0], "bg_tint": [1.0, 1.0, 1.0],
+    })
+    print(f"Using style preset: '{style_name}'")
+
     y, sr, tempo, beat_times = detect_beats(str(song_path))
     energy_times, energy = compute_energy(y, sr)
 
@@ -72,6 +83,7 @@ def export_composite_scene(output_path):
         "beat_times": [float(t) for t in beat_times],
         "energy": [float(e) for e in energy_norm],
         "duration": len(poses) / fps,
+        "style": style,
     })
 
     html = (HTML_TEMPLATE
@@ -170,6 +182,8 @@ const bgFragmentShader = `
   varying vec2 vUv;
   uniform float u_time;
   uniform float u_energy;
+  uniform vec3 u_color_phase;
+  uniform vec3 u_color_tint;
 
   void main() {
     vec2 uv = vUv * 2.0 - 1.0;
@@ -183,10 +197,10 @@ const bgFragmentShader = `
     v *= pulse;
 
     vec3 color = vec3(
-      0.5 + 0.5 * sin(v + t),
-      0.5 + 0.5 * sin(v + t + 2.0),
-      0.5 + 0.5 * sin(v + t + 4.0)
-    );
+      0.5 + 0.5 * sin(v + t + u_color_phase.x),
+      0.5 + 0.5 * sin(v + t + u_color_phase.y),
+      0.5 + 0.5 * sin(v + t + u_color_phase.z)
+    ) * u_color_tint;
     color *= (0.5 + u_energy * 0.9);
 
     gl_FragColor = vec4(color, 1.0);
@@ -196,7 +210,12 @@ const bgFragmentShader = `
 const bgMaterial = new THREE.ShaderMaterial({
   vertexShader: bgVertexShader,
   fragmentShader: bgFragmentShader,
-  uniforms: { u_time: { value: 0 }, u_energy: { value: 0 } },
+  uniforms: {
+    u_time: { value: 0 },
+    u_energy: { value: 0 },
+    u_color_phase: { value: new THREE.Vector3(...SCENE_DATA.style.bg_phase) },
+    u_color_tint: { value: new THREE.Vector3(...SCENE_DATA.style.bg_tint) },
+  },
   depthWrite: false,
 });
 const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(40, 24), bgMaterial);
@@ -206,14 +225,14 @@ scene.add(bgPlane);
 // --- Character: same sphere/cylinder stick figure as character_viewer.html
 const jointMeshes = {};
 const sphereGeo = new THREE.SphereGeometry(0.035, 12, 12);
-const jointMat = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+const jointMat = new THREE.MeshBasicMaterial({ color: parseInt(SCENE_DATA.style.joint_color, 16) });
 SCENE_DATA.joints.forEach(name => {
   const mesh = new THREE.Mesh(sphereGeo, jointMat);
   scene.add(mesh);
   jointMeshes[name] = mesh;
 });
 
-const boneMat = new THREE.MeshBasicMaterial({ color: 0x4169e1 });
+const boneMat = new THREE.MeshBasicMaterial({ color: parseInt(SCENE_DATA.style.bone_color, 16) });
 const cylinderGeo = new THREE.CylinderGeometry(0.018, 0.018, 1, 8);
 const boneMeshes = SCENE_DATA.bones.map(() => {
   const mesh = new THREE.Mesh(cylinderGeo, boneMat);

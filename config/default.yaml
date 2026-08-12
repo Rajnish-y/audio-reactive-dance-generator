@@ -5,7 +5,28 @@ song:
   path: "assets/test_audio/test_song.mp3"
 
 character:
-  style: "default"     # will map to a style preset later (Phase 8)
+  style: "something_random"    # selects a preset from style_presets below
+
+# Each preset bundles a background color treatment (phase-shifted hue
+# cycling + tint, applied to the existing plasma shader formula - not a
+# different shader per style, just different color parameters) with
+# matching character joint/bone colors.
+style_presets:
+  default:
+    joint_color: "0xffa500"
+    bone_color: "0x4169e1"
+    bg_phase: [0.0, 2.0, 4.0]
+    bg_tint: [1.0, 1.0, 1.0]
+  synthwave:
+    joint_color: "0xff69b4"
+    bone_color: "0x00ffff"
+    bg_phase: [0.0, 1.5, 3.5]
+    bg_tint: [1.3, 0.4, 1.2]
+  cyberpunk:
+    joint_color: "0x39ff14"
+    bone_color: "0x00ff88"
+    bg_phase: [0.0, 3.0, 1.0]
+    bg_tint: [0.3, 1.4, 0.6]
 
 motion:
   # If true, use real AIST++ motion-capture data when the referenced
