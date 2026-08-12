@@ -171,8 +171,8 @@ function applyFrame(frameIdx) {
   const frame = MOTION.frames[frameIdx];
 
   MOTION.joints.forEach((name, i) => {
-    const [x, y] = frame[i];
-    jointMeshes[name].position.set(x, y, 0);
+    const [x, y, z] = frame[i];
+    jointMeshes[name].position.set(x, y, z);
   });
 
   MOTION.bones.forEach((pair, i) => {

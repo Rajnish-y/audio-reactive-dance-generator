@@ -12,12 +12,13 @@ from aist_adapter import COCO_JOINTS, coco_frame_to_pose
 def make_synthetic_frame():
     """
     Build one fake COCO frame with distinct, easy-to-check coordinates:
-    joint index i gets position (i, i*10), so any mapping mistake is
-    immediately obvious from the numbers.
+    joint index i gets position (i, i*10, i*100) — each axis has a
+    clearly distinguishable value, so a bug that drops or mixes up an
+    axis (e.g. Z silently defaulting to 0) would be caught, not masked.
     """
     frame = np.zeros((17, 3))
     for i in range(17):
-        frame[i] = [i, i * 10, 0]
+        frame[i] = [i, i * 10, i * 100]
     return frame
 
 
@@ -43,12 +44,12 @@ def test_direct_mappings():
 
     for our_joint, coco_joint in checks.items():
         expected_idx = COCO_JOINTS.index(coco_joint)
-        expected = [float(expected_idx), float(expected_idx * 10)]
+        expected = [float(expected_idx), float(expected_idx * 10), float(expected_idx * 100)]
         actual = pose[our_joint]
         assert actual == expected, (
             f"{our_joint}: expected {expected} (from COCO '{coco_joint}'), got {actual}"
         )
-    print("All direct joint mappings correct.")
+    print("All direct joint mappings correct (including Z).")
 
 
 def test_derived_joints():
@@ -57,16 +58,18 @@ def test_derived_joints():
 
     l_sh_idx = COCO_JOINTS.index("left_shoulder")
     r_sh_idx = COCO_JOINTS.index("right_shoulder")
-    expected_neck = [(l_sh_idx + r_sh_idx) / 2.0, (l_sh_idx + r_sh_idx) / 2.0 * 10]
+    avg_idx = (l_sh_idx + r_sh_idx) / 2.0
+    expected_neck = [avg_idx, avg_idx * 10, avg_idx * 100]
     assert pose["neck"] == expected_neck, f"neck: expected {expected_neck}, got {pose['neck']}"
 
     l_hip_idx = COCO_JOINTS.index("left_hip")
     r_hip_idx = COCO_JOINTS.index("right_hip")
-    expected_hip_center = [(l_hip_idx + r_hip_idx) / 2.0, (l_hip_idx + r_hip_idx) / 2.0 * 10]
+    avg_hip_idx = (l_hip_idx + r_hip_idx) / 2.0
+    expected_hip_center = [avg_hip_idx, avg_hip_idx * 10, avg_hip_idx * 100]
     assert pose["hip_center"] == expected_hip_center, (
         f"hip_center: expected {expected_hip_center}, got {pose['hip_center']}"
     )
-    print("Derived joints (neck, hip_center) correct.")
+    print("Derived joints (neck, hip_center) correct, including Z.")
 
 
 def test_all_our_joints_present():

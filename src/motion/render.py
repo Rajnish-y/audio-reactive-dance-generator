@@ -21,13 +21,17 @@ def render_pose_sequence_gif(poses: list, fps: float, output_path, title_prefix:
     Render a list of pose dicts as an animated GIF.
 
     Args:
-        poses: list of pose dicts (joint name -> [x, y])
+        poses: list of pose dicts (joint name -> [x, y, z])
         fps: frames per second for playback timing
         output_path: where to save the .gif (str or Path)
         title_prefix: text shown before the timestamp in each frame's title
         xlim, ylim: plot axis limits — defaults fit real AIST++ data after
             normalize_pose_sequence; procedural motion (tighter range)
             may look better with a smaller box if used standalone.
+
+    Note: this is a flat 2D diagnostic preview (matplotlib) — Z is
+    intentionally ignored here even though poses now carry real depth;
+    the actual 3D render is the Three.js composite scene.
     """
     fig, ax = plt.subplots(figsize=(4, 5))
 
@@ -38,8 +42,8 @@ def render_pose_sequence_gif(poses: list, fps: float, output_path, title_prefix:
         ys = [pose[j][1] for j in SKELETON_JOINTS]
         ax.scatter(xs, ys, c="orange", s=20, zorder=3)
         for a, b in BONES:
-            xa, ya = pose[a]
-            xb, yb = pose[b]
+            xa, ya = pose[a][0], pose[a][1]
+            xb, yb = pose[b][0], pose[b][1]
             ax.plot([xa, xb], [ya, yb], c="royalblue", linewidth=2, zorder=2)
         ax.set_xlim(*xlim)
         ax.set_ylim(*ylim)

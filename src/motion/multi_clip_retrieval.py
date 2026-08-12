@@ -139,8 +139,8 @@ def render_preview(poses, fps, output_path):
         ys = [pose[j][1] for j in SKELETON_JOINTS]
         ax.scatter(xs, ys, c="orange", s=20, zorder=3)
         for a, b in BONES:
-            xa, ya = pose[a]
-            xb, yb = pose[b]
+            xa, ya = pose[a][0], pose[a][1]
+            xb, yb = pose[b][0], pose[b][1]
             ax.plot([xa, xb], [ya, yb], c="royalblue", linewidth=2, zorder=2)
         ax.set_xlim(-1.2, 1.2)
         ax.set_ylim(-0.5, 2.3)

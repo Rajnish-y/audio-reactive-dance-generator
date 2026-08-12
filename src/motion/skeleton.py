@@ -40,15 +40,19 @@ BONES = [
 ]
 
 # A neutral standing pose. All motion is generated as offsets from this.
+# z is always 0 here — procedural motions have no depth variation — but
+# included so every pose in the pipeline (procedural or real AIST++
+# data) uses the same [x, y, z] format; downstream code never needs to
+# check which source a pose came from.
 BASE_POSE = {
-    "head": (0.0, 1.70), "neck": (0.0, 1.50),
-    "l_shoulder": (-0.25, 1.45), "r_shoulder": (0.25, 1.45),
-    "l_elbow": (-0.35, 1.15), "r_elbow": (0.35, 1.15),
-    "l_hand": (-0.40, 0.85), "r_hand": (0.40, 0.85),
-    "hip_center": (0.0, 0.90),
-    "l_hip": (-0.15, 0.90), "r_hip": (0.15, 0.90),
-    "l_knee": (-0.18, 0.45), "r_knee": (0.18, 0.45),
-    "l_foot": (-0.20, 0.0), "r_foot": (0.20, 0.0),
+    "head": (0.0, 1.70, 0.0), "neck": (0.0, 1.50, 0.0),
+    "l_shoulder": (-0.25, 1.45, 0.0), "r_shoulder": (0.25, 1.45, 0.0),
+    "l_elbow": (-0.35, 1.15, 0.0), "r_elbow": (0.35, 1.15, 0.0),
+    "l_hand": (-0.40, 0.85, 0.0), "r_hand": (0.40, 0.85, 0.0),
+    "hip_center": (0.0, 0.90, 0.0),
+    "l_hip": (-0.15, 0.90, 0.0), "r_hip": (0.15, 0.90, 0.0),
+    "l_knee": (-0.18, 0.45, 0.0), "r_knee": (0.18, 0.45, 0.0),
+    "l_foot": (-0.20, 0.0, 0.0), "r_foot": (0.20, 0.0, 0.0),
 }
 
 UPPER_BODY = [

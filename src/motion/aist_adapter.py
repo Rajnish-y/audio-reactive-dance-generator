@@ -36,16 +36,16 @@ def coco_frame_to_pose(coco_kpts: np.ndarray) -> dict:
     dict format (see skeleton.SKELETON_JOINTS).
 
     Args:
-        coco_kpts: array of shape (17, 2) or (17, 3) in COCO_JOINTS
-            order — only the first two columns (x, y) are used; a third
-            column (z depth, or confidence for 2D data) is ignored here.
-            2D projection of 3D data is a separate, later concern.
+        coco_kpts: array of shape (17, 3) in COCO_JOINTS order — x, y,
+            z (AIST++'s real depth axis). Previously only x, y were
+            kept and z was dropped; now preserved for real 3D rendering
+            instead of a flat plane.
 
     Returns:
-        dict mapping our joint names -> [x, y]
+        dict mapping our joint names -> [x, y, z]
     """
     def get(name):
-        return coco_kpts[COCO_JOINTS.index(name)][:2]
+        return coco_kpts[COCO_JOINTS.index(name)][:3]
 
     l_sh, r_sh = get("left_shoulder"), get("right_shoulder")
     l_hip, r_hip = get("left_hip"), get("right_hip")
@@ -67,7 +67,7 @@ def coco_frame_to_pose(coco_kpts: np.ndarray) -> dict:
         "l_foot": get("left_ankle"),
         "r_foot": get("right_ankle"),
     }
-    return {k: [float(v[0]), float(v[1])] for k, v in pose.items()}
+    return {k: [float(v[0]), float(v[1]), float(v[2])] for k, v in pose.items()}
 
 
 def coco_sequence_to_poses(coco_seq: np.ndarray) -> list:
@@ -116,15 +116,24 @@ def normalize_pose_sequence(poses: list, target_height: float = 1.6, vertical_of
     coordinate range, based on the sequence's own bounding box — so any
     real clip fits the same visual frame our procedural motions do,
     without hardcoding a fixed scale that would only work for one clip.
+
+    Scaling is uniform across x, y, AND z (all three multiplied by the
+    same factor, derived from the y/height range) — using a different
+    scale per axis would distort proportions, squashing or stretching
+    depth relative to height rather than preserving the real body shape.
     """
-    all_xy = np.array([[v for v in pose.values()] for pose in poses])
-    y_min, y_max = all_xy[:, :, 1].min(), all_xy[:, :, 1].max()
-    center = all_xy.reshape(-1, 2).mean(axis=0)
+    all_xyz = np.array([[v for v in pose.values()] for pose in poses])
+    y_min, y_max = all_xyz[:, :, 1].min(), all_xyz[:, :, 1].max()
+    center = all_xyz.reshape(-1, 3).mean(axis=0)
     scale = target_height / (y_max - y_min) if y_max > y_min else 1.0
 
     def norm_pose(pose):
         return {
-            j: [(v[0] - center[0]) * scale, (v[1] - center[1]) * scale + vertical_offset]
+            j: [
+                (v[0] - center[0]) * scale,
+                (v[1] - center[1]) * scale + vertical_offset,
+                (v[2] - center[2]) * scale,
+            ]
             for j, v in pose.items()
         }
 
@@ -137,6 +146,7 @@ def lerp_pose(pose_a: dict, pose_b: dict, alpha: float) -> dict:
         j: [
             pose_a[j][0] * (1 - alpha) + pose_b[j][0] * alpha,
             pose_a[j][1] * (1 - alpha) + pose_b[j][1] * alpha,
+            pose_a[j][2] * (1 - alpha) + pose_b[j][2] * alpha,
         ]
         for j in pose_a
     }
@@ -172,9 +182,11 @@ def ease_into_transition(poses_a: list, poses_b: list, blend_frames: int) -> lis
 
 
 def compute_pose_gap(pose_a: dict, pose_b: dict) -> float:
-    """Total joint displacement between two poses (sum of per-joint distances)."""
+    """Total joint displacement between two poses (sum of per-joint 3D distances)."""
     return sum(
-        ((pose_b[j][0] - pose_a[j][0]) ** 2 + (pose_b[j][1] - pose_a[j][1]) ** 2) ** 0.5
+        ((pose_b[j][0] - pose_a[j][0]) ** 2
+         + (pose_b[j][1] - pose_a[j][1]) ** 2
+         + (pose_b[j][2] - pose_a[j][2]) ** 2) ** 0.5
         for j in pose_a
     )
 

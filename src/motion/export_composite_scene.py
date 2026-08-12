@@ -255,8 +255,8 @@ function updateBone(mesh, a, b) {
 function applyFrame(frameIdx) {
   const frame = SCENE_DATA.frames[frameIdx];
   SCENE_DATA.joints.forEach((name, i) => {
-    const [x, y] = frame[i];
-    jointMeshes[name].position.set(x, y, 0);
+    const [x, y, z] = frame[i];
+    jointMeshes[name].position.set(x, y, z);
   });
   SCENE_DATA.bones.forEach((pair, i) => {
     const a = jointMeshes[pair[0]].position;
